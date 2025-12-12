@@ -1,6 +1,8 @@
 from datetime import datetime
 import json
 from . import db
+from .project import Project
+from .user import User
 
 class Generation(db.Model):
     __tablename__ = 'generations'

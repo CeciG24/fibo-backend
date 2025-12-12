@@ -2,6 +2,8 @@ from flask_bcrypt import Bcrypt
 from . import db
 from datetime import datetime
 
+bcrypt = Bcrypt()
+
 class User(db.Model):
     __tablename__ = 'users'
     
@@ -23,7 +25,7 @@ class User(db.Model):
     plan = db.Column(db.String(20), default='free', index=True)  # free, pro, enterprise
     generations_today = db.Column(db.Integer, default=0)
     total_generations = db.Column(db.Integer, default=0)
-    credits = db.Column(db.Integer, default=0)  # Para sistema de créditos opcional
+    credits = db.Column(db.Integer, default=0)
     
     # Estado de cuenta
     is_active = db.Column(db.Boolean, default=True, index=True)
@@ -36,45 +38,23 @@ class User(db.Model):
     last_login = db.Column(db.DateTime)
     last_generation_reset = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relaciones (ya definidas en backref de otros modelos)
-    # projects = relationship via backref
-    # generations = relationship via backref
+    # Relaciones (definir con strings para evitar circular imports)
+    projects = db.relationship('Project', backref='owner', lazy='dynamic', cascade='all, delete-orphan')
+    generations = db.relationship('Generation', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<User {self.username}>'
     
     def set_password(self, password):
-        """
-        Hash y guarda la contraseña usando bcrypt.
-        
-        Args:
-            password (str): Contraseña en texto plano
-        """
+        """Hash y guarda la contraseña usando bcrypt"""
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
     
     def check_password(self, password):
-        """
-        Verifica si la contraseña es correcta.
-        
-        Args:
-            password (str): Contraseña a verificar
-            
-        Returns:
-            bool: True si la contraseña es correcta
-        """
+        """Verifica si la contraseña es correcta"""
         return bcrypt.check_password_hash(self.password_hash, password)
     
     def to_dict(self, include_email=False, include_stats=False):
-        """
-        Serializa el usuario a diccionario.
-        
-        Args:
-            include_email (bool): Si incluir email (solo para el propio usuario)
-            include_stats (bool): Si incluir estadísticas detalladas
-            
-        Returns:
-            dict: Usuario serializado
-        """
+        """Serializa el usuario a diccionario"""
         data = {
             'id': self.id,
             'username': self.username,
@@ -96,6 +76,7 @@ class User(db.Model):
             data['last_login'] = self.last_login.isoformat() if self.last_login else None
         
         if include_stats:
+            # Importar aquí para evitar circular import
             from app.models.project import Project, Generation
             data['stats'] = {
                 'total_projects': Project.query.filter_by(user_id=self.id).count(),
@@ -107,20 +88,11 @@ class User(db.Model):
         return data
     
     def can_generate(self, max_per_day=None):
-        """
-        Verifica si el usuario puede generar más imágenes hoy.
-        
-        Args:
-            max_per_day (int, optional): Límite personalizado
-            
-        Returns:
-            bool: True si puede generar
-        """
+        """Verifica si el usuario puede generar más imágenes hoy"""
         if self.plan == 'enterprise':
             return True
         
         if max_per_day is None:
-            # Límites por plan
             limits = {
                 'free': 100,
                 'pro': 500,
@@ -131,12 +103,7 @@ class User(db.Model):
         return self.generations_today < max_per_day
     
     def get_remaining_generations(self):
-        """
-        Obtiene el número de generaciones restantes hoy.
-        
-        Returns:
-            int: Generaciones restantes (o 'unlimited')
-        """
+        """Obtiene el número de generaciones restantes hoy"""
         if self.plan == 'enterprise':
             return 'unlimited'
         
@@ -150,33 +117,19 @@ class User(db.Model):
         return max(0, remaining)
     
     def increment_generation_count(self):
-        """
-        Incrementa el contador de generaciones.
-        Debe llamarse después de cada generación exitosa.
-        """
+        """Incrementa el contador de generaciones"""
         self.generations_today += 1
         self.total_generations += 1
         db.session.commit()
     
     def reset_daily_count(self):
-        """
-        Resetea el contador diario de generaciones.
-        Debe llamarse con un cronjob cada 24 horas.
-        """
+        """Resetea el contador diario de generaciones"""
         self.generations_today = 0
         self.last_generation_reset = datetime.utcnow()
         db.session.commit()
     
     def spend_credits(self, amount):
-        """
-        Gasta créditos del usuario.
-        
-        Args:
-            amount (int): Cantidad de créditos a gastar
-            
-        Returns:
-            bool: True si se pudieron gastar, False si no hay suficientes
-        """
+        """Gasta créditos del usuario"""
         if self.credits < amount:
             return False
         
@@ -185,25 +138,12 @@ class User(db.Model):
         return True
     
     def add_credits(self, amount):
-        """
-        Agrega créditos al usuario.
-        
-        Args:
-            amount (int): Cantidad de créditos a agregar
-        """
+        """Agrega créditos al usuario"""
         self.credits += amount
         db.session.commit()
     
     def upgrade_plan(self, new_plan):
-        """
-        Actualiza el plan del usuario.
-        
-        Args:
-            new_plan (str): Nuevo plan (free, pro, enterprise)
-            
-        Returns:
-            bool: True si se actualizó exitosamente
-        """
+        """Actualiza el plan del usuario"""
         valid_plans = ['free', 'pro', 'enterprise']
         if new_plan not in valid_plans:
             return False
@@ -213,53 +153,24 @@ class User(db.Model):
         return True
     
     def verify_email(self):
-        """
-        Marca el email como verificado.
-        """
+        """Marca el email como verificado"""
         self.is_verified = True
         self.verification_token = None
         db.session.commit()
     
     @classmethod
     def get_by_email(cls, email):
-        """
-        Busca un usuario por email.
-        
-        Args:
-            email (str): Email del usuario
-            
-        Returns:
-            User: Usuario encontrado o None
-        """
+        """Busca un usuario por email"""
         return cls.query.filter_by(email=email).first()
     
     @classmethod
     def get_by_username(cls, username):
-        """
-        Busca un usuario por username.
-        
-        Args:
-            username (str): Username del usuario
-            
-        Returns:
-            User: Usuario encontrado o None
-        """
+        """Busca un usuario por username"""
         return cls.query.filter_by(username=username).first()
     
     @classmethod
     def create(cls, username, email, password, **kwargs):
-        """
-        Crea un nuevo usuario.
-        
-        Args:
-            username (str): Username único
-            email (str): Email único
-            password (str): Contraseña en texto plano
-            **kwargs: Campos adicionales
-            
-        Returns:
-            User: Usuario creado
-        """
+        """Crea un nuevo usuario"""
         user = cls(
             username=username,
             email=email,

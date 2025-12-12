@@ -15,5 +15,12 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hour
     
     # FIBO API configuration
-    FIBO_API_URL = 'https://api.fibo.com'
-    FIBO_API_KEY = 'your_fibo_api_key_here'
+    FIBO_API_URL = 'https://engine.prod.bria-api.com/v2'
+    FIBO_API_KEY = 'f7b5e814d48a4544b18433faabc6587d'
+
+    # Mock mode
+    FIBO_MOCK_MODE = False
+    # Storage
+    UPLOAD_FOLDER = './uploads'
+    OUTPUT_FOLDER = './outputs'
+    MAX_CONTENT_LENGTH = 16777216

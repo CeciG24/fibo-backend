@@ -1,5 +1,5 @@
 from datetime import datetime
-from . import db
+from app.models import db
 import json
 
 class Project(db.Model):
@@ -26,8 +26,8 @@ class Project(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
-    # Relaciones
-    owner = db.relationship('User', backref=db.backref('projects', lazy='dynamic', cascade='all, delete-orphan'))
+    # Relaciones - Usar strings para evitar import circular
+    # owner = relación definida en User via backref
     generations = db.relationship('Generation', backref='project', lazy='dynamic', cascade='all, delete-orphan')
     
     def __repr__(self):
@@ -60,84 +60,74 @@ class Project(db.Model):
         
         return data
     
-    @classmethod
-    def get_all(cls, user_id=None, page=1, per_page=10):
-        """
-        Obtiene todos los proyectos con paginación.
-        Si user_id se proporciona, filtra por usuario.
-        """
-        query = cls.query
-        
-        if user_id:
-            query = query.filter_by(user_id=user_id)
-        
-        query = query.order_by(cls.updated_at.desc())
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        
-        return {
-            'projects': [p.to_dict() for p in pagination.items],
-            'total': pagination.total,
-            'page': page,
-            'per_page': per_page,
-            'pages': pagination.pages
-        }
-    
-    @classmethod
-    def get_by_id(cls, project_id):
-        """Obtiene un proyecto por ID"""
-        project = cls.query.get(project_id)
-        if not project:
-            return None
-        return project.to_dict(include_generations=True)
-    
-    @classmethod
-    def create(cls, user_id, title, description='', **kwargs):
-        """Crea un nuevo proyecto"""
-        project = cls(
-            user_id=user_id,
-            title=title,
-            description=description,
-            aspect_ratio=kwargs.get('aspect_ratio', '16:9'),
-            resolution=kwargs.get('resolution', '1024x576'),
-            is_public=kwargs.get('is_public', False)
-        )
-        
-        db.session.add(project)
-        db.session.commit()
-        
-        return project.to_dict()
-    
-    @classmethod
-    def update(cls, project_id, **kwargs):
-        """Actualiza un proyecto existente"""
-        project = cls.query.get(project_id)
-        if not project:
-            return None
-        
-        # Campos actualizables
-        allowed_fields = [
-            'title', 'description', 'thumbnail_url',
-            'aspect_ratio', 'resolution', 'is_public', 'status'
-        ]
-        
-        for field in allowed_fields:
-            if field in kwargs:
-                setattr(project, field, kwargs[field])
-        
-        db.session.commit()
-        return project.to_dict()
-    
-    @classmethod
-    def delete(cls, project_id):
-        """Elimina un proyecto"""
-        project = cls.query.get(project_id)
-        if not project:
-            return False
-        
-        db.session.delete(project)
-        db.session.commit()
-        return True
-    
     def is_owner(self, user_id):
         """Verifica si un usuario es el dueño del proyecto"""
         return self.user_id == user_id
+
+
+class Generation(db.Model):
+    __tablename__ = 'generations'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True, index=True)
+    
+    # Prompt y resultado
+    prompt = db.Column(db.Text, nullable=False)
+    negative_prompt = db.Column(db.Text)
+    image_url = db.Column(db.String(500))
+    
+    # Parámetros guardados (JSON)
+    parameters = db.Column(db.Text)  # JSON string con todos los parámetros
+    
+    # Metadatos
+    seed = db.Column(db.Integer)
+    generation_time = db.Column(db.Float)  # Tiempo en segundos
+    fibo_generation_id = db.Column(db.String(100))  # ID de FIBO
+    
+    # Estado
+    status = db.Column(db.String(20), default='pending', index=True)  # pending, generating, completed, failed
+    error_message = db.Column(db.Text)
+    
+    # Organización
+    scene_number = db.Column(db.Integer)
+    is_favorite = db.Column(db.Boolean, default=False, index=True)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = db.Column(db.DateTime)
+    
+    # Relaciones - user definida en User via backref, project definida arriba
+    
+    def __repr__(self):
+        return f'<Generation {self.id} - {self.status}>'
+    
+    def set_parameters(self, params_dict):
+        """Guarda los parámetros como JSON"""
+        self.parameters = json.dumps(params_dict)
+    
+    def get_parameters(self):
+        """Obtiene los parámetros desde JSON"""
+        if self.parameters:
+            return json.loads(self.parameters)
+        return {}
+    
+    def to_dict(self):
+        """Serializa la generación a diccionario"""
+        return {
+            'id': self.id,
+            'prompt': self.prompt,
+            'negative_prompt': self.negative_prompt,
+            'image_url': self.image_url,
+            'parameters': self.get_parameters(),
+            'seed': self.seed,
+            'generation_time': self.generation_time,
+            'status': self.status,
+            'error_message': self.error_message,
+            'scene_number': self.scene_number,
+            'is_favorite': self.is_favorite,
+            'created_at': self.created_at.isoformat(),
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'project_id': self.project_id,
+            'user_id': self.user_id
+        }
