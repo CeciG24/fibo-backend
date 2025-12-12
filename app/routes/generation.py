@@ -348,3 +348,68 @@ def delete_generation(generation_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+    
+# Agregar este endpoint a routes/generation.py
+
+@generation_bp.route('/<int:generation_id>/fetch-result', methods=['POST'])
+@jwt_required()
+def fetch_generation_result(generation_id):
+    """
+    Intenta obtener el resultado de una generación que está pendiente.
+    Útil cuando Bria devolvió un result_id pero no la imagen aún.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        generation = Generation.query.filter_by(
+            id=generation_id,
+            user_id=current_user_id
+        ).first()
+        
+        if not generation:
+            return jsonify({"error": "Generación no encontrada"}), 404
+        
+        # Verificar que tenga un fibo_generation_id
+        if not generation.fibo_generation_id:
+            return jsonify({
+                "error": "Esta generación no tiene result_id de Bria"
+            }), 400
+        
+        # Si ya tiene imagen, devolver
+        if generation.image_url:
+            return jsonify({
+                "success": True,
+                "message": "La generación ya tiene imagen",
+                "generation": generation.to_dict()
+            }), 200
+        
+        # Intentar obtener resultado de Bria
+        print(f"🔍 Consultando resultado de Bria: {generation.fibo_generation_id}")
+        result = fibo_service.get_result_by_id(generation.fibo_generation_id)
+        
+        if result.get("error"):
+            return jsonify({
+                "success": False,
+                "error": result["error"]
+            }), 500
+        
+        if result.get("status") == "completed":
+            # Actualizar generación con la imagen
+            generation.image_url = result.get("image_url")
+            generation.status = "completed"
+            generation.completed_at = datetime.utcnow()
+            db.session.commit()
+            
+            return jsonify({
+                "success": True,
+                "message": "Imagen obtenida exitosamente",
+                "generation": generation.to_dict()
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "status": result.get("status"),
+                "message": "La imagen aún se está generando. Intenta de nuevo en unos segundos."
+            }), 202
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400

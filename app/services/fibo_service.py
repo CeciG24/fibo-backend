@@ -90,37 +90,37 @@ class FIBOService:
         """
         Transforma nuestro payload interno al formato de Bria.ai FIBO.
         
-        Según la documentación de Bria, el formato es:
+        Según la documentación de Bria V2, el formato es:
         {
             "prompt": "...",
             "num_results": 1,
             "width": 1024,
             "height": 1024,
-            "seed": 123456 (opcional)
+            "sync": true  ← IMPORTANTE: Devuelve imagen directamente
         }
         """
-        bria_payload = {
-            "prompt": scene_payload.get("prompt", ""),
-            "num_results": 1,  # Generar 1 imagen
-            "width": scene_payload.get("width", 1024),
-            "height": scene_payload.get("height", 1024)
-        }
+        # Mejorar prompt con info cinematográfica
+        enhanced_prompt = self._enhance_prompt_with_cinematics(
+            scene_payload.get("prompt", ""),
+            scene_payload
+        )
         
-        # Agregar negative prompt si existe
-        if scene_payload.get("negative_prompt"):
-            bria_payload["negative_prompt"] = scene_payload["negative_prompt"]
+        # Payload con sync=true para respuesta síncrona
+        bria_payload = {
+            "prompt": enhanced_prompt,
+            "num_results": 1,
+            "width": scene_payload.get("width", 1024),
+            "height": scene_payload.get("height", 1024),
+            "sync": True  # ← Clave para obtener imagen inmediatamente
+        }
         
         # Agregar seed si existe
         if scene_payload.get("seed"):
             bria_payload["seed"] = scene_payload["seed"]
         
-        # Bria.ai también puede aceptar parámetros de estilo
-        # Agregar los parámetros de cámara e iluminación al prompt
-        enhanced_prompt = self._enhance_prompt_with_cinematics(
-            bria_payload["prompt"],
-            scene_payload
-        )
-        bria_payload["prompt"] = enhanced_prompt
+        print(f"\n📝 Prompt original: {scene_payload.get('prompt')}")
+        print(f"✨ Prompt mejorado: {enhanced_prompt}")
+        print(f"🔄 Modo síncrono: {bria_payload['sync']}\n")
         
         return bria_payload
     
@@ -201,25 +201,48 @@ class FIBOService:
         """
         Transforma la respuesta de Bria.ai a nuestro formato interno.
         
-        Bria devuelve algo como:
+        Con sync=true, Bria devuelve directamente:
         {
-            "result": [
-                {
-                    "image_url": "https://...",
-                    "seed": 123456
-                }
-            ]
+            "result": {
+                "image_url": "https://...",
+                "seed": 123456
+            }
         }
         """
         try:
-            # Extraer primera imagen del resultado
-            result = bria_result.get("result", [{}])[0]
+            print(f"\n{'='*60}")
+            print(f"🔄 PROCESANDO RESPUESTA SÍNCRONA")
+            print(f"{'='*60}")
+            print(f"Respuesta completa: {bria_result}")
+            print(f"{'='*60}\n")
+            
+            # Extraer el resultado (es un dict, no una lista)
+            result = bria_result.get("result", {})
+            
+            if not result:
+                return {
+                    "error": "No se recibieron resultados de Bria",
+                    "raw_response": bria_result
+                }
+            
+            # Extraer la URL de la imagen directamente
+            image_url = result.get("image_url", "")
+            seed = result.get("seed")
+            
+            if not image_url:
+                return {
+                    "error": "No se recibió URL de imagen",
+                    "raw_response": bria_result
+                }
+            
+            print(f"✅ Imagen obtenida: {image_url}")
+            print(f"🎲 Seed: {seed}\n")
             
             return {
                 "success": True,
-                "id": str(result.get("seed", "unknown")),
-                "image_url": result.get("image_url", ""),
-                "seed": result.get("seed"),
+                "id": str(seed) if seed else "unknown",
+                "image_url": image_url,
+                "seed": seed,
                 "status": "completed",
                 "mock": False,
                 "provider": "bria.ai",
@@ -229,10 +252,85 @@ class FIBOService:
                     "height": original_payload.get("height")
                 }
             }
+            
         except Exception as e:
+            print(f"❌ Error procesando respuesta: {str(e)}")
             return {
                 "error": f"Error al procesar respuesta de Bria: {str(e)}",
                 "raw_response": bria_result
+            }
+    
+    def _get_result(self, result_id: str) -> Dict[str, Any]:
+        """
+        Consulta el resultado de una generación en Bria.ai
+        """
+        headers = {
+            "api_token": self.api_key
+        }
+        
+        try:
+            url = f"{self.api_url}/results/{result_id}"
+            
+            print(f"\n{'='*60}")
+            print(f"🔍 CONSULTANDO RESULTADO")
+            print(f"{'='*60}")
+            print(f"URL: {url}")
+            print(f"Result ID: {result_id}")
+            print(f"{'='*60}\n")
+            
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=30
+            )
+            
+            print(f"\n{'='*60}")
+            print(f"📊 RESPUESTA DE STATUS")
+            print(f"{'='*60}")
+            print(f"Status Code: {response.status_code}")
+            print(f"Body: {response.text}")
+            print(f"{'='*60}\n")
+            
+            if response.status_code == 404:
+                # Tal vez el endpoint es diferente, probar alternativas
+                print("⚠️  404 en /results/{id}, probando endpoint alternativo...")
+                
+                # Intentar con /result (singular)
+                alt_url = f"{self.api_url}/result/{result_id}"
+                print(f"🔄 Probando: {alt_url}")
+                
+                alt_response = requests.get(alt_url, headers=headers, timeout=30)
+                
+                if alt_response.status_code == 200:
+                    print("✅ Funcionó con /result (singular)")
+                    return alt_response.json()
+                
+                # Intentar sin /v2
+                alt_url2 = f"{self.api_url.replace('/v2', '')}/results/{result_id}"
+                print(f"🔄 Probando: {alt_url2}")
+                
+                alt_response2 = requests.get(alt_url2, headers=headers, timeout=30)
+                
+                if alt_response2.status_code == 200:
+                    print("✅ Funcionó sin /v2")
+                    return alt_response2.json()
+                
+                return {
+                    "error": f"Endpoint no encontrado. Probé: {url}, {alt_url}, {alt_url2}",
+                    "status_code": 404
+                }
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            print(f"📊 Estado: {result.get('status', 'unknown')}")
+            
+            return result
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error: {str(e)}")
+            return {
+                "error": f"Error al consultar resultado: {str(e)}"
             }
     
     def _mock_generate(self, scene_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -304,7 +402,7 @@ class FIBOService:
         try:
             # Probar conexión con endpoint simple
             response = requests.get(
-                f"{self.api_url.replace('/v1', '')}/health",
+                f"{self.api_url.replace('/v1', '').replace('/v2', '')}/health",
                 timeout=10
             )
             return {
@@ -320,4 +418,30 @@ class FIBOService:
                 "provider": "bria.ai",
                 "api_url": self.api_url,
                 "message": "No se pudo conectar a Bria.ai"
+            }
+    
+    def get_result_by_id(self, result_id: str) -> Dict[str, Any]:
+        """
+        Obtiene el resultado de una generación por su result_id.
+        Útil para recuperar imágenes que aún se estaban procesando.
+        """
+        result = self._get_result(result_id)
+        
+        if result.get("error"):
+            return result
+        
+        if result.get("status") == "success":
+            image_url = result.get("urls", [{}])[0].get("url", "")
+            return {
+                "success": True,
+                "id": result_id,
+                "image_url": image_url,
+                "seed": result.get("seed"),
+                "status": "completed"
+            }
+        else:
+            return {
+                "success": False,
+                "status": result.get("status", "unknown"),
+                "message": f"Generación aún en proceso: {result.get('status')}"
             }
