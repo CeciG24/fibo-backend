@@ -1,6 +1,10 @@
 from flask import Flask
 from .config import Config
-from .extensions import db, jwt, bcrypt
+from models import db
+from flask_jwt_extended import JWTManager
+from flask_bcrypt import Bcrypt
+jwt = JWTManager()
+bcrypt = Bcrypt()
 
 def create_app():
     app = Flask(__name__)
