@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify
 
-bp = Blueprint('presets', __name__)
+bp = Blueprint('presets', __name__, url_prefix='/presets')
 
 DIRECTOR_PRESETS = {
     "wes_anderson": {

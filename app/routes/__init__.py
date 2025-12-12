@@ -9,9 +9,10 @@ def init_routes(app):
     from .projects import projects_bp
     from .users import users_bp
     from .generation import generation_bp
-
+    from .presets import bp as presets_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(generation_bp)
+    app.register_blueprint(presets_bp)
 
