@@ -3,9 +3,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import User
 from app.models.project import Project
 
-bp = Blueprint('users', __name__)
+users_bp = Blueprint('users', __name__)
 
-@bp.route('/<username>', methods=['GET'])
+@users_bp.route('/<username>', methods=['GET'])
 def get_user_profile(username):
     """Obtiene el perfil público de un usuario"""
     try:
@@ -30,7 +30,7 @@ def get_user_profile(username):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@bp.route('/<username>/projects', methods=['GET'])
+@users_bp.route('/<username>/projects', methods=['GET'])
 def get_user_public_projects(username):
     """Obtiene los proyectos públicos de un usuario"""
     try:
@@ -62,7 +62,7 @@ def get_user_public_projects(username):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@bp.route('/search', methods=['GET'])
+@users_bp.route('/search', methods=['GET'])
 def search_users():
     """Busca usuarios por username"""
     try:

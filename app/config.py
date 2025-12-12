@@ -5,7 +5,10 @@ class Config:
     SECRET_KEY = 'your_secret_key_here'
     
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/database.db'
+    SQLALCHEMY_DATABASE_URI = (
+        'postgresql://fibodb_jj0j_user:vFGY83RK2fanHeoDt3XyIWtCWlUEzSp0'
+        '@dpg-d4to2qmmcj7s7383oa7g-a.oregon-postgres.render.com/fibodb_jj0j'
+    )
     
     # JWT configuration
     JWT_SECRET_KEY = 'your_jwt_secret_key_here'

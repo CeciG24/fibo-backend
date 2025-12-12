@@ -1,4 +1,4 @@
-import bcrypt
+from flask_bcrypt import Bcrypt
 from . import db
 from datetime import datetime
 

@@ -3,12 +3,12 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models import db
 from app.models.project import Project
 from app.models.user import User
-from app.middleware import owner_required, cache_response
+from app.middleware import owner_required
 
-bp = Blueprint('projects', __name__)
+projects_bp = Blueprint('projects', __name__)
 
 # ==================== LIST ALL (del usuario actual) ====================
-@bp.route('/', methods=['GET'])
+@projects_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_projects():
     """
@@ -50,7 +50,7 @@ def get_projects():
         }), 400
 
 # ==================== GET ONE (verificando ownership) ====================
-@bp.route('/<int:project_id>', methods=['GET'])
+@projects_bp.route('/<int:project_id>', methods=['GET'])
 @jwt_required()
 @owner_required(Project, 'project_id')
 def get_project(project_id, resource=None):
@@ -72,7 +72,7 @@ def get_project(project_id, resource=None):
         }), 400
 
 # ==================== CREATE ====================
-@bp.route('/', methods=['POST'])
+@projects_bp.route('/', methods=['POST'])
 @jwt_required()
 def create_project():
     """
@@ -125,7 +125,7 @@ def create_project():
         }), 400
 
 # ==================== UPDATE (solo el dueño) ====================
-@bp.route('/<int:project_id>', methods=['PUT'])
+@projects_bp.route('/<int:project_id>', methods=['PUT'])
 @jwt_required()
 @owner_required(Project, 'project_id')
 def update_project(project_id, resource=None):
@@ -168,7 +168,7 @@ def update_project(project_id, resource=None):
         }), 400
 
 # ==================== DELETE (solo el dueño) ====================
-@bp.route('/<int:project_id>', methods=['DELETE'])
+@projects_bp.route('/<int:project_id>', methods=['DELETE'])
 @jwt_required()
 @owner_required(Project, 'project_id')
 def delete_project(project_id, resource=None):
@@ -193,7 +193,7 @@ def delete_project(project_id, resource=None):
         }), 400
 
 # ==================== PROYECTOS PÚBLICOS (sin auth) ====================
-@bp.route('/public', methods=['GET'])
+@projects_bp.route('/public', methods=['GET'])
 def get_public_projects():
     """
     Lista proyectos públicos (galería).
@@ -226,7 +226,7 @@ def get_public_projects():
         }), 400
 
 # ==================== ESTADÍSTICAS DEL PROYECTO ====================
-@bp.route('/<int:project_id>/stats', methods=['GET'])
+@projects_bp.route('/<int:project_id>/stats', methods=['GET'])
 @jwt_required()
 @owner_required(Project, 'project_id')
 def get_project_stats(project_id, resource=None):
@@ -255,7 +255,7 @@ def get_project_stats(project_id, resource=None):
         }), 400
 
 # ==================== DUPLICAR PROYECTO ====================
-@bp.route('/<int:project_id>/duplicate', methods=['POST'])
+@projects_bp.route('/<int:project_id>/duplicate', methods=['POST'])
 @jwt_required()
 @owner_required(Project, 'project_id')
 def duplicate_project(project_id, resource=None):
