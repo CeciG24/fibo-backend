@@ -5,7 +5,7 @@ from app.models.project import Project
 from app.models.user import User
 from app.middleware import owner_required
 
-projects_bp = Blueprint('projects', __name__)
+projects_bp = Blueprint('projects', __name__, url_prefix='/projects')
 
 # ==================== LIST ALL (del usuario actual) ====================
 @projects_bp.route('/', methods=['GET'])
