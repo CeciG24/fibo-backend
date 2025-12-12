@@ -1,115 +1,128 @@
+# translator.py
+# ======================================================
+# Traductor matemático que convierte datos 3D del frontend
+# en parámetros cinematográficos para FIBO.
+# Cumple API Backlog Dev:
+#  - T1 map_camera_angle
+#  - T2 map_shot_size
+#  - T3 map_lighting
+# ======================================================
+
 import math
-from typing import Dict, Any
 
-class SceneTranslator:
+
+# ======================
+# T1: Camera angle
+# ======================
+def map_camera_angle(position, target=[0, 0, 0]):
     """
-    Traduce los datos de cámara 3D provenientes del frontend (Three.js)
-    al formato que FIBO/Bria necesita para componer una imagen.
+    Determina el ángulo de cámara en base a la relación
+    de altura entre la cámara y el objetivo.
+    
+    position: [x, y, z]
+    target:   [x, y, z]
+
+    Returns:
+        "low_angle", "eye_level", "high_angle", "birds_eye"
     """
 
-    # ---------------------------------------------------------
-    # 1️⃣ CONVERTIR ROTACIÓN RADIANES → DEGRADOS
-    # ---------------------------------------------------------
-    @staticmethod
-    def radians_to_degrees(radians: float) -> float:
-        return radians * 180.0 / math.pi
+    cam_y = position[1]
+    target_y = target[1]
 
-    # ---------------------------------------------------------
-    # 2️⃣ DETERMINAR ÁNGULO DE CÁMARA
-    # ---------------------------------------------------------
-    @staticmethod
-    def get_camera_angle(rot_x_deg: float) -> str:
-        """
-        Determina el ángulo según la rotación vertical.
-        """
-        if rot_x_deg > 25:
-            return "high_angle"
-        elif rot_x_deg < -25:
-            return "low_angle"
-        return "eye_level"
+    diff = cam_y - target_y
 
-    # ---------------------------------------------------------
-    # 3️⃣ DETERMINAR TIPO DE TOMA (DEPENDE LA DISTANCIA)
-    # ---------------------------------------------------------
-    @staticmethod
-    def get_shot_type(position: list) -> str:
-        """
-        Determina si es close_up, medium_shot o wide_shot
-        según la distancia de la cámara al punto de interés.
-        """
-        x, y, z = position
-        dist = math.sqrt(x*x + y*y + z*z)
+    # Reglas simples basadas en la cinematografía clásica
+    if diff > 3.0:
+        return "birds_eye"        # Muy arriba
+    elif diff > 1.0:
+        return "high_angle"       # Arriba
+    elif diff < -1.0:
+        return "low_angle"        # Abajo
+    else:
+        return "eye_level"        # A nivel del sujeto
 
-        if dist > 6:
-            return "wide_shot"
-        elif dist > 2.5:
-            return "medium_shot"
-        else:
-            return "close_up"
 
-    # ---------------------------------------------------------
-    # 4️⃣ CALCULAR LONGITUD FOCAL (conversión aproximada FOV → focal)
-    # ---------------------------------------------------------
-    @staticmethod
-    def get_focal_length(fov: float) -> float:
-        """
-        Conversión aproximada de FOV → focal_length para Bria/FIBO.
-        """
-        base_focal = 50  # focal "default"
-        return round(base_focal * (60 / max(fov, 1)), 2)
+# ======================
+# T2: Shot size
+# ======================
+def map_shot_size(position, target=[0, 0, 0]):
+    """
+    Determina el tamaño del plano según la distancia
+    entre la cámara y el objeto.
 
-    # ---------------------------------------------------------
-    # 5️⃣ ARMAR EL BLOQUE "camera" QUE BRIA NECESITA
-    # ---------------------------------------------------------
-    @staticmethod
-    def translate_camera(camera_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Convierte los datos 3D en parámetros cinematográficos para FIBO.
-        """
-        position = camera_data.get("position", [0, 0, 5])
-        rotation = camera_data.get("rotation", [0, 0, 0])
-        fov = camera_data.get("fov", 60)
+    Valores retornados:
+        close_up
+        medium_shot
+        long_shot
+    """
+    dx = position[0] - target[0]
+    dy = position[1] - target[1]
+    dz = position[2] - target[2]
 
-        # Convertir rotación
-        rot_x_deg = SceneTranslator.radians_to_degrees(rotation[0])
-        rot_y_deg = SceneTranslator.radians_to_degrees(rotation[1])
-        rot_z_deg = SceneTranslator.radians_to_degrees(rotation[2])
+    dist = math.sqrt(dx*dx + dy*dy + dz*dz)
 
-        return {
-            "position": position,
-            "rotation_degrees": [rot_x_deg, rot_y_deg, rot_z_deg],
-            "angle": SceneTranslator.get_camera_angle(rot_x_deg),
-            "shot_type": SceneTranslator.get_shot_type(position),
-            "fov": fov,
-            "focal_length": SceneTranslator.get_focal_length(fov),
-            "depth_of_field": "medium"
-        }
+    if dist < 4:
+        return "close_up"
+    elif dist < 8:
+        return "medium_shot"
+    else:
+        return "long_shot"
 
-    # ---------------------------------------------------------
-    # 6️⃣ FUNCIÓN PRINCIPAL
-    # ---------------------------------------------------------
-    @staticmethod
-    def translate(scene_payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Traduce TODA la escena del frontend al formato interno que usa FIBOService.
-        """
 
-        camera_block = SceneTranslator.translate_camera(
-            scene_payload.get("camera", {})
-        )
+# ======================
+# T3: Lighting
+# ======================
+def map_lighting(light_position):
+    """
+    Determina el tipo de iluminación según el ángulo vertical
+    de la luz virtual.
 
-        result = {
-            "prompt": scene_payload.get("prompt", ""),
-            "camera": camera_block,
-            "lighting": scene_payload.get("lighting", {
-                "time_of_day": "daylight",
-                "color_grading": "neutral"
-            }),
-            "style": scene_payload.get("style", "realistic"),
-            "width": scene_payload.get("width", 1024),
-            "height": scene_payload.get("height", 576),
-            "seed": scene_payload.get("seed"),
-            "steps": scene_payload.get("steps", 30)
-        }
+    light_position: [x, y, z]
 
-        return result
+    Reglas:
+        35°–55° → studio_lighting
+        <20°   → flat_lighting
+        >60°   → dramatic_lighting
+        else   → neutral
+    """
+
+    x, y, z = light_position
+
+    # Ángulo vertical de la luz sobre el horizonte
+    angle = math.degrees(math.atan2(y, math.sqrt(x*x + z*z)))
+
+    if 35 <= angle <= 55:
+        return "studio_lighting"
+    elif angle < 20:
+        return "flat_lighting"
+    elif angle > 60:
+        return "dramatic_lighting"
+
+    return "neutral"
+
+
+# ======================
+# Wrapper principal
+# ======================
+def translate_camera_data(camera_state, light_position=[0, 3, 3]):
+    """
+    Convierte el estado de cámara del frontend a parámetros
+    cinematográficos para FIBOService.
+
+    camera_state:
+    {
+       "position": [x,y,z],
+       "rotation": [rx,ry,rz],
+       "fov": 50
+    }
+    """
+
+    position = camera_state.get("position", [0, 2, 5])
+
+    return {
+        "angle": map_camera_angle(position),
+        "shot_type": map_shot_size(position),
+        "lighting": map_lighting(light_position),
+        "fov": camera_state.get("fov", 50)
+    }
+
