@@ -9,9 +9,11 @@ from app.models.user import User
 from app.models.project import Generation
 from app.models import db
 import time
+from app.services.translator import translate_camera_payload
 
 generation_bp = Blueprint('generation', __name__, url_prefix='/generation')
 fibo_service = FIBOService()
+
 
 @generation_bp.route('/health', methods=['GET'])
 def health_check():
@@ -26,23 +28,22 @@ def generate_single_frame():
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
-        
+
         if not user:
             return jsonify({"error": "Usuario no encontrado"}), 404
-        
-        # Verificar límite de generaciones
+
         if not user.can_generate():
             return jsonify({
                 "error": "Has alcanzado tu límite diario de generaciones",
                 "remaining": 0,
                 "upgrade_url": "/pricing"
             }), 429
-        
+
         data = request.get_json()
-        
+
         if not data or not data.get('prompt'):
             return jsonify({"error": "El prompt es requerido"}), 400
-        
+
         # Crear registro de generación
         generation = Generation(
             user_id=user.id,
@@ -51,29 +52,54 @@ def generate_single_frame():
             negative_prompt=data.get('negative_prompt', ''),
             status='generating'
         )
-        
+
         db.session.add(generation)
         db.session.commit()
-        
+
+        # Validar y procesar raw_camera/raw_light
+        raw_camera = data.get("raw_camera")
+        raw_light = data.get("raw_light")
+
+        if raw_camera:
+            if not isinstance(raw_camera, dict):
+                return jsonify({"error": "raw_camera debe ser un objeto"}), 400
+
+            if raw_light and not isinstance(raw_light, dict):
+                return jsonify({"error": "raw_light debe ser un objeto"}), 400
+
+            translated = translate_camera_payload(
+                camera_position=raw_camera.get("position", [0, 2, 5]),
+                camera_rotation=raw_camera.get("rotation", [0, 0, 0]),
+                camera_fov=raw_camera.get("fov", 50),
+                target_position=[0, 0, 0],
+                light_position=raw_light.get("position") if raw_light else None
+            )
+
+            camera_data = translated["camera"]
+            lighting_data = translated["lighting"]
+        else:
+            camera_data = data.get("camera", {})
+            lighting_data = data.get("lighting", {})
+
         try:
             # Construir la escena
             camera = CameraSettings(
-                angle=data.get('camera', {}).get('angle', 'eye_level'),
-                shot_type=data.get('camera', {}).get('shot_type', 'medium_shot'),
-                fov=data.get('camera', {}).get('fov', 50.0),
-                focal_length=data.get('camera', {}).get('focal_length', 50.0),
-                aperture=data.get('camera', {}).get('aperture', 2.8),
-                composition_rule=data.get('camera', {}).get('composition_rule', 'rule_of_thirds'),
-                depth_of_field=data.get('camera', {}).get('depth_of_field', 'medium')
+                angle=camera_data.get('angle', 'eye_level'),
+                shot_type=camera_data.get('shot_type', 'medium_shot'),
+                fov=camera_data.get('fov', 50.0),
+                focal_length=camera_data.get('focal_length', 35.0),
+                aperture=camera_data.get('aperture', 2.8),
+                composition_rule=camera_data.get('composition_rule', 'rule_of_thirds'),
+                depth_of_field=camera_data.get('depth_of_field', 'medium')
             )
-            
+
             lighting = LightingSetup(
-                preset=data.get('lighting', {}).get('preset', 'three_point'),
-                time_of_day=data.get('lighting', {}).get('time_of_day', 'golden_hour'),
-                color_grading=data.get('lighting', {}).get('color_grading', 'neutral'),
-                ambient_intensity=data.get('lighting', {}).get('ambient_intensity', 0.3)
+                preset=lighting_data.get('preset', 'three_point'),
+                time_of_day=lighting_data.get('time_of_day', 'golden_hour'),
+                color_grading=lighting_data.get('color_grading', 'cinematic'),
+                ambient_intensity=lighting_data.get('ambient_intensity', 0.3)
             )
-            
+
             scene = Scene(
                 prompt=data['prompt'],
                 negative_prompt=data.get('negative_prompt', ''),
@@ -87,7 +113,7 @@ def generate_single_frame():
                 style=data.get('style', 'cinematic'),
                 color_palette=data.get('color_palette')
             )
-            
+
             # Validar escena
             valid, error_msg = scene.validate()
             if not valid:
@@ -95,57 +121,71 @@ def generate_single_frame():
                 generation.error_message = error_msg
                 db.session.commit()
                 return jsonify({"error": error_msg}), 400
-            
+
             # Guardar parámetros
             generation.set_parameters(scene.to_fibo_payload())
             if scene.seed:
                 generation.seed = scene.seed
-            
+
             # Generar con FIBO
             start_time = time.time()
             payload = scene.to_fibo_payload()
             result = fibo_service.generate_image(payload)
+
+            # NUEVO: Manejar respuesta asíncrona
+            if result.get('status') == 'processing':
+                generation.status = 'processing'
+                generation.fibo_generation_id = result.get('job_id')
+                db.session.commit()
+
+                return jsonify({
+                    "success": True,
+                    "status": "processing",
+                    "generation_id": generation.id,
+                    "message": "Tu imagen se está generando",
+                    "poll_url": f"/generation/{generation.id}/status"
+                }), 202  # 202 Accepted
+
             generation_time = time.time() - start_time
-            
+
             # Verificar si hubo error
             if 'error' in result:
                 generation.status = 'failed'
                 generation.error_message = result['error']
                 generation.generation_time = generation_time
                 db.session.commit()
-                
+
                 return jsonify({
                     "success": False,
                     "error": result['error'],
                     "suggestion": result.get('suggestion', 'Verifica tu configuración de FIBO API'),
                     "generation_id": generation.id
                 }), 500
-            
+
             # Actualizar generación con resultado exitoso
             generation.status = 'completed'
             generation.image_url = result.get('image_url')
             generation.fibo_generation_id = result.get('id')
             generation.generation_time = generation_time
             generation.completed_at = datetime.utcnow()
-            
-            # Incrementar contador del usuario
+
             user.increment_generation_count()
-            
+
             db.session.commit()
-            
+
             return jsonify({
                 "success": True,
                 "generation": generation.to_dict(),
                 "remaining_today": user.get_remaining_generations(),
                 "mock_mode": result.get('mock', False)
             }), 200
-            
+
         except Exception as e:
             generation.status = 'failed'
             generation.error_message = str(e)
             db.session.commit()
             raise e
-            
+
     except Exception as e:
         db.session.rollback()
         return jsonify({

@@ -19,7 +19,7 @@ class Config:
     FIBO_API_KEY = 'f7b5e814d48a4544b18433faabc6587d'
 
     # Mock mode
-    FIBO_MOCK_MODE = False
+    FIBO_MOCK_MODE = True
     # Storage
     UPLOAD_FOLDER = './uploads'
     OUTPUT_FOLDER = './outputs'

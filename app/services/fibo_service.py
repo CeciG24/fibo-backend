@@ -10,7 +10,7 @@ class FIBOService:
     def __init__(self):
         self.api_url = Config.FIBO_API_URL
         self.api_key = Config.FIBO_API_KEY
-        self.mock_mode = os.getenv('FIBO_MOCK_MODE', 'false').lower() == 'true'
+        self.mock_mode = bool(getattr(Config, "FIBO_MOCK_MODE", False))
         
     def generate_image(self, scene_payload: Dict[str, Any]) -> Dict[str, Any]:
         """

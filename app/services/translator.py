@@ -126,3 +126,31 @@ def translate_camera_data(camera_state, light_position=[0, 3, 3]):
         "fov": camera_state.get("fov", 50)
     }
 
+def translate_camera_payload(
+    camera_position,
+    camera_rotation,
+    camera_fov,
+    target_position,
+    light_position
+):
+    angle = map_camera_angle(camera_position, target_position)
+    shot = map_shot_size(camera_position, target_position)
+    lighting_type = map_lighting(light_position) if light_position else "neutral"
+    return {
+        "camera": {
+            "angle": angle,
+            "shot_type": shot,
+            "fov": camera_fov,
+            "focal_length": 35,
+            "aperture": 2.8,
+            "composition_rule": "rule_of_thirds",
+            "depth_of_field": "medium"
+        },
+        "lighting": {
+            "preset": "three_point",  # Valor por defecto
+            "time_of_day": "golden_hour",
+            "color_grading": "cinematic",
+            "ambient_intensity": 0.3,
+            "lighting_type": lighting_type  # Tu cálculo del ángulo
+        }
+    }
